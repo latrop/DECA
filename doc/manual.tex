@@ -1,0 +1,340 @@
+%
+% ****** maiksamp.tex 29.11.2001 ******
+%
+
+\documentclass[
+aps,%
+12pt,%
+final,%
+notitlepage,%
+oneside,%
+onecolumn,%
+nobibnotes,%
+nofootinbib,% 
+superscriptaddress,%
+noshowpacs,%
+centertags]%
+{revtex4}
+
+\begin{document}
+%\selectlanguage{english}
+
+\title{Galaxy Decomposition \\ Analysis Code DECA}% Разбиение на строки осуществляется командой \\
+
+\author{\firstname{A.~V.}~\surname{Mosenkov}}
+% Здесь разбиение на строки осуществляется автоматически или командой \\
+\email{mosenkovAV@gmail.com}
+\affiliation{%
+Saint Petersburg State University, Russia
+}%
+\affiliation{%
+Central Astronomical Observatory of RAS, Russia
+}%
+
+%\date{\today}
+%\today печатает cегодняшнее число
+
+\begin{abstract}
+The DECA module is a Python library providing photometric analysis of galaxies. It involves widely used packages and codes in order to perform 1-D and 2-D decomposition of the galaxy image. DECA is intended to investigate both edge-on and not highly inclined galaxies (including face-on galaxies as well). The sophisticated analysis of edge-on and spiral galaxies can be applied. The great advantage of this program is minimal human involvement into the analysis procedures. DECA is a very useful tool to decompose large samples of galaxies in the reliable statistical mode.
+\end{abstract}
+
+\maketitle
+
+
+\noindent
+{\bf Key words:\/} galaxies, morphology, structural analysis
+
+\section{Introduction}
+
+We present a new Python wrapper to perform decompositions of galaxy images using the well-known program codes as Source Extractor (\cite{Bertin}), GALFIT (\cite{Peng02},\cite{Peng10}) and the astronomical reduction and analysis system IRAF. In addition to them our Decomposition Analysis (DECA) code uses some Python libraries to deal with fits images, arrays and do sophisticated mathematical analysis. In this brief manual we are about to present the practical aspects of using DECA. In addition to this article, please read the main article (\cite{Mosenkov}) where you can find more information about the built algorithm, DECA features and the results of some tests to show its applicability for performing reliable analysis of galaxies.  
+ 
+\section{Installation}
+
+DECA requires Python version 2.6 or newer. Following Python packages are required:
+\begin{enumerate}
+ \item \textbf{Standard Python modules:} Numpy, Matplotlib, IPython and Scipy library (which contains all of them). You can find additional information how to install them at once here:
+	\textit{ http://www.scipy.org/install.html}
+
+ \item \textbf{Some specific python modules:} PyFITS, fpdf.
+	%Astropy, APLpy, PyFITS, Kapteyn module, CosmoloPy, fpdf.
+ \begin{description}
+	\item[PyFITS] A Python module to work with FITS files. 
+
+		\textit{http://www.stsci.edu/institute/software\_hardware/pyfits}
+   %\item[Astropy] Python astronomy package.  
+   %\textit{http://www.astropy.org/}
+   %\item[APLpy] Python module to create pictures.  
+   %\textit{http://aplpy.github.io/install.html}
+   %\item[Kapteyn module] Python astronomy package.
+   %\textit{http://www.astro.rug.nl/software/kapteyn/}
+   %\item[CosmoloPy] Python module for cosmology.
+   %\textit{http://roban.github.io/CosmoloPy/#download}
+
+	\item[fpdf] A Python module to create pdf files.  
+
+		\textit{https://code.google.com/p/pyfpdf/}
+ \end{description}
+
+
+
+ \item \textbf{Special programs:} IRAF, SExtractor, GALFIT, ds9
+  \begin{description}
+   \item[IRAF with STSDAS] Packages for performing astronomy data reduction and analysis.
+
+  	 \textit{http://iraf.noao.edu/}
+
+  	 \textit{http://www.stsci.edu/institute/software\_hardware/stsdas/download-stsdas}
+
+   \item[SExtractor] A program to build a catalogue of objects from an astronomical image.
+
+   	\textit{http://www.astromatic.net/software/SExtractor}
+
+   \item[GALFIT] The main program to perform 2-D decompositions.
+
+   	\textit{http://users.obs.carnegiescience.edu/peng/work/GALFIT/GALFIT.html}
+
+   \item[ds9] An astronomical imaging and data visualization application.
+
+   	\textit{http://hea-www.harvard.edu/RD/ds9/site/Home.html}
+  \end{description}
+\end{enumerate}
+You can easily download all these packages and install them on your computer. If you are going to analyze SDSS frames and use PSField files to extract PSF images, you need to download the following code from the SDSS web site:
+	\textit{http://www.sdss3.org/binaries/readAtlasImages-v5\_4\_11.tar.gz}
+	
+%You need to install all the packages above. In the directory $/programs$ you can find an archive with ds9, GALFIT and SExtractor for Debian/Ubuntu 64. It the archive $/other\_programs$ you will find python modules that are used in DECA, and some other programs (to read SDSS PSField in order to create PSF images etc.).
+
+You can use the script \texttt{DECA\_INSTALL.sh} to install all the packages and programs mentioned above (including IRAF). However this script executes installation only for Ubuntu 32/64. If you have another operation system or if you already have got some packages from the list above you can choose the missing programs. Please, follow the comments inside the script.
+
+Once you downloaded and installed all the packages and programs you can install DECA. Unpack the downloaded file \texttt{DECA.tar.gz} to the directory you wish. We recommend you to give it name DECA:
+	\texttt{\$ tar -zxvf DECA.tar.gz}
+
+After that you can call DECA by \texttt{\$ python [path\_to\_DECA]/deca.py ...} or you can export path to the DECA directory in $.bashrc$ Ubuntu file (or $bash\_profile$ in SuSe or Fedora). Now you can run DECA just by typing \texttt{\$deca.py ...} (of course, the file \texttt{deca.py} in the DECA directory must be executable: \texttt{\$ chmod +x deca.py}. That is all the installation! Now you can try DECA.
+
+
+\section{Quick start}
+
+At first, try to run DECA on the example. Go to the directory \texttt{/example/one\_galaxy} and copy the files \texttt{deca\_input.py}, \texttt{PSF.fits} and \texttt{galaxy.fits} to any new directory where you want to run DECA. When you are in create the IRAF file \texttt{login.cl}. You can do it by \texttt{\$ mkiraf}. Then type: $xgterm$. You need to do it every time if there is no created login.cl. Do not forget to change the line \texttt{set imdir} and type there the same path as it is for \texttt{set home}. In this case all the IRAF temporal files will be saved and then deleted in this directory (otherwise they will be saved somwhere in \texttt{/iraf/imdirs/[user]}). In my case these lines will be:
+
+\texttt{set	home		= "/home/mosenkov/GALAXY/"}  
+
+\texttt{set	imdir		= "/home/mosenkov/GALAXY/"} 
+	
+Now you are ready to run DECA. You can do it by:
+
+	\texttt{\$ python [path\_to\_DECA]/deca.py 1 0}
+
+or, if you have exported PATH in your bash profile (see sect.II):
+
+	\texttt{\$ deca.py 1 0}
+
+Here 1 means ``only one galaxy'' (one image) and 0 is a working DECA mode (this parameter will be discussed below).
+While DECA is running you will see many text lines and results of work of many executed tasks. After a few time you would see the program has finished. You can go to the subdirectory \texttt{/pics/1} to see the results. Open \texttt{plot.pdf} and look at the plots and parameter values you just have received.
+
+If you want to run DECA for the sample of galaxies, please do copy the following files from the \texttt{example/sample}: \texttt{deca\_input.dat}, texttt{auto.sh} and the whole directory \texttt{images}. Then you need to edit \texttt{auto.sh}. Just change the line $decapath$ by typing there the real full path to DECA on your computer. Then execute:
+
+	\texttt{\$ sh auto.sh}
+
+All the galaxies from the file \texttt{deca\_input.dat} will be decomposed one after another. You can have a look at the results as you go to $/pics/[number\_of\_the\_galaxy]$. Here $number\_of\_the\_galaxy$ is a galaxy number in the list of galaxies given in the input file \texttt{deca\_input.dat}.   
+
+
+\section{Input files}
+
+Let us now consider how to prepare input files for DECA. 
+
+The input file for the only image is $deca\_input.py$. Here we add some comments to the lines.
+
+\begin{verbatim}
+#********* About the image *********#
+image_name = '3943_431_40_22969_3.fits.gz' 	
+\end{verbatim}
+	Image format: $fits$. Compressed files ($.gz$ and $.bz2$) are allowed. It should be only one extension fits file excepting SDSS dr8 (or newer release) frame fits files. You need to specify the full path to the image if it is not in the directory where you are going to run DECA.   
+
+\begin{verbatim}
+weight_name = 'NONE' 				
+\end{verbatim}
+	If you do not have weight image it will be created by GALFIT using the information below (GAIN, NCOMBINE). In this case you need to have enough sky background without any objects to create the weight map properly.
+
+\begin{verbatim} 
+PSF_name = 'NONE'			   	
+\end{verbatim}
+	If you do not have PSF sample of a star (it can be a model or a real star with a high $S/N$) then you need to know the value of the PSF FWHM. DECA can determine it and create PSF image by itself (see below).
+
+\begin{verbatim}
+survey = 'UKIDSS' 				
+\end{verbatim}
+	The following surveys have been described in the code: SDSS(\cite{Ahn}), UKIDSS(\cite{Lawrence}), 2MASS(\cite{Skrutskie}) and WISE(\cite{Wright}). You can add other survey descriptions in the file \texttt{servey\_descr.py}.
+	If you work with the noticed surveys you have no need to specify the lines below (from $m0$ to $EXPTIME$) because that information has been already written in DECA. $m0$ is the zero point for the Poghson formula in [mag$\,$arcsec$^{-2}$]: $\mu=m0 - 2.5\,log10(counts[DN]) + 5\,\lg(xsize\cdot ysize)$, where $xsize$ and $ysize$ are the plate scales expressed in [arcsec$\,$pix$^{-1}$]. $GAIN$ is a CCD gain in a unit of [$e^{-}\mathrm{ADU}^{-1}$]. $NCOMBINE$ equals the number of images used in the average. $EXPTIME$ is the exposure time expressed in seconds. Please, read carefully the GALFIT user's manual (\cite{Peng}). All the terminology which is used here was taken from that article. All the parameters must be specified according to the GALFIT requirements.
+
+\begin{verbatim}
+m0 = 28.0 					
+xsize = 0.396					
+ysize = 0.396					
+GAIN = 4.6					
+NCOMBINE = 1					
+EXPTIME = 53.907				
+
+sky = 'NONE'					
+\end{verbatim}
+	Here you can give DECA the determined sky level if you can trust it. If you do not know it just type 'NONE'. The sky level should be given in [ADU].
+\begin{verbatim}
+fwhm = 1.0 					 
+\end{verbatim}
+	Here you need to specify PSF FWHM. It is required by DECA even if you already have an PSF image. If you want to let DECA create model PSF image using this value of FWHM you need to specify here the most precise value of it because even small deferences can strongly influence the results. The PSF FWHM parameter should be given in [arcsec]. For SDSS dr7 (or later) the magnitude zero pint $m0$ can be calculated by this expression:
+\[
+ m_{0} = 2.5\,\lg(EXPTIME)-(aa+kk\cdot airmass) \, ,
+\]
+where $aa$ is the zero-point count rate, $kk$ is the extinction coefficient. 
+\begin{verbatim}
+airmass = 1.1846848					
+aa = -23.749599					
+kk = 0.062895					
+\end{verbatim}
+
+\textbf{Information about the object}. In this part you need to specify the common information about the galaxy. Enter coordinates as precisely as possible (especially in case of close objects). They should be expressed in decimal degrees. You can find the useful information in the header of the image and in well-known databases (NED, hyperleda, Simbad). You can also measure coordinates just clicking on the galaxy center in your favourite fits viewer (ds9, IRAF, MIDAS, Aladin applet etc.). $Filter\_name$ and $colour\_name$ (with $colour\_value$) are necessary for calculating the $K$-correction. The filter name is also important for the absolute magnitude calculation and internal extinction reduction. If you want to find physical values you need to enter the redshift $z$ or the angular distance $D$. The distance value must be in [Mpc]. If you have only one of them just type $`NO\textrm'$ for the other. The parameter $galaxy\_name$ is only needed for the output files. If you do not know the name of the object, type $`NONE\textrm'$ and it will be written as ([RA]\_[DEC]). The list of filters can be found in the setup file. Note here that the space between letters in $colour\_name$ is necessary.  The Galactic extinction $Aext$ is given in [mag].
+\begin{verbatim} 
+#********** ABOUT THE OBJECT ********** #
+coords = (35.6372,42.348) 			
+filter_name = 'K'				
+galaxy_name = 'NGC891'				
+colour_name = 'H - K'				
+colour_value = 0.373				
+z = 0.0010					
+D = 'NO'					
+Aext = 0.024					
+\end{verbatim}
+Here you have to choose the crucial options of the image preparation and decomposition. 
+
+\begin{verbatim}
+#********** DECOMPOSITION ANALYSIS ************#
+find_sky = 1 
+find_psf = 1 					
+image = 'field' 				
+model = ('edge+ser') 
+find_model = 'edge'
+numb_iter = 1 					
+sph = 'NO'					
+#******** Initial parameters or parameters for the modeling (optional) *********#
+ini_use = 'NO'					
+\end{verbatim}
+If $find\_sky=0$ then the the sky background will not be estimated, and the $sky$ value will be used. If you specify it equaled 1, then the sky value will be determined internally. 
+The parameter $find\_psf$ has several possible values to be given:
+\begin{description}
+\item[0] psf.fits is given,
+\item[1] PSF model image will be created on your input fwhm,
+\item[2] PSF model image will be created on the best fit PSF parameters (slow),
+\item[3] PSF model image will be created on the best PSF star,
+\item[4] PSF image will be the cutout of the best PSF star from the image,
+\item[5] PSF star image will be extracted from the PSField file (only for SDSS),
+\item[10] No convolution will be applied. 
+\end{description}
+The parameter $image=`field\textrm'$ means that you want to cut out the galaxy image from the field. If $image=`full\textrm'$ then you do not want to cut out the galaxy image (only rotation to align the major axis to the horizontal axis will be done).
+Possible models are $`exp\textrm'$ (late type spirals), $`edge\textrm'$ (edge-on galaxies without a bulge), $`exp+ser\textrm'$ (bulge + disk galaxy), $`edge+ser\textrm'$ (bulge + disk edge-on galaxy) and $`ser\textrm'$ (for elliptical galaxies, or it can be given to describe the galaxy brightness by the single Sersic function). The parameter $find\_model$ have three options: $`opt\textrm'$ (if you do not know the model of the object - in this case the parameter $model$ can be neglected), $`incl\textrm'$ (for non-edge-on galaxies only) and $`edge\textrm'$ (for edge-on galaxies only). The parameter $numb\_iter$ can be equal 0 (just a model built on parameters from \texttt{initials.py}), 1 (standard mode) or 2 (in case of fitting spirals). The parameter $sph=`YES\textrm'$ is valid only for edge-on galaxies. In this case some fitting procedures will be applied to recover the radial and height scales of the disk and define the law of the vertical surface brightness distribution. Also the parameters of possible warps can be found.  
+
+$ini\_use=`YES\textrm'$ if you want to use your own initial parameters or $`NO\textrm'$ if not. In case of $numb\_iter = 0$ (model building) this line is not in use. The initial parameters should be stored in the file called \texttt{initials.py}.
+
+
+Thus, in the DECA input file you can quickly specify the parameters and start DECA. If you have a sample of galaxies, the file \texttt{deca\_input.dat} should be created. The example of such a file can be taken in \texttt{doc/} directory. There are almost the same parameters as they are in \texttt{deca\_input.py} excepting the different order of the columns and the presence of the read-out noise column which is not in use (you can ignore it). 
+
+In the default file \texttt{setup.py} you can find many hidden options of using DECA. You can tune DECA the way you wish and below are some explanations how to do that. You can create your own file \texttt{setup.py} and put it into the directory along with \texttt{deca\_input.py} (or \texttt{.dat}) where you are going to run DECA. In this case DECA will ignore the default \texttt{setup.py} located in the DECA directory and will read your setup file. 
+
+The section called \textbf{OUTPUT FILES} is just for calling the output files. The parameter \textbf{INTERRUPTION TIME} describing the duration of the one GALFIT run (i.e. if GALFIT is stuck somewhere DECA will continue with the next object when the interruption time is up). 
+
+In the section \textbf{SExtractor setup} you can specify SExtractor options of cataloged  objects from the image (read the SExtractor manual \cite{Bertin_manual}). The parameter $FIND\_MAJOR\_OBJECT$ is describing the way how to select the object. You can specify it to select an object from the catalogue with the biggest semi-major axis (=0) or to find the closest object to the given coordinates within the circle of radius equaled $radius\_find$ with the semi-major axis, larger than $semimajor\_find$.
+The parameter $mask\_stars$ can be used to mask stars only (=0) or all the objects distinguished from the object under study (=1).
+The parameter $star\_detect$ is used to separate stellar objects (with high $S/N$) from the diffusional ones. It is important when you are working with spiral or dusty structures (galaxies with bright star formation regions, very dusted galaxies etc.). Sometimes SExtractor can mask big part of the galaxy as it is considering it as the other object. 
+The parameter $delete\_contam=0$ is useful to creating the output image with the masked pixels replaced with the pixels from the model. That means that is we had an image with masked stars, other galaxies etc., the pixels belonged to them will be replaced with the pixels from the model image (but without noise).
+The parameter $warps\_cut=0$ is used only for edge-on galaxies with warped disks. In this case you need to have a file with specified  borders of warps (\texttt{warps\_coords.txt}). The example of such a file can be found in \texttt{/doc}.
+
+As it has been just mentioned galaxies can be very dusted or have many bright spots (e.g. star formation regions, globular clusters etc.). SExtrator can devide galaxy in these cases into many particles. Spiral arms can be masked, dust lanes can be recognized as a separator between two or many objects. That is why we applied the special technique to mask the contaminents of bright stars and knots but not the big parts of the galaxy. The parameter $deca\_del\_contam=0$ can mask such objects. If you want to add the SExtractor mask to the final mask you can specify $add\_contam\_sextr=0$, otherwise $add\_contam\_sextr=1$ and only DECA found contaminents will be masked. The parameter $lim$ is important if you want to exclude all pixels beyond the faintest galaxy isophote that are above $lim\cdot rms$. If you do not want to exclude these pixels, type $lim=0$. The parameter $gap$ is given in pixels. It is the width of the area between two closest isophotes. The algorithm how to mask contaminents is taken from the work~\cite{Vikram}. 
+
+The parameter $sky\_find$ determines the way how the sky level and the noise will be calculated. We found out that the best way to find them is $way=5$ which is described in detail in \cite{Navarro}. But you can try others if you wish. Some of them work faster (e.g., 4 and 7).
+
+The parameter $extr\_coeff$ defines the dimensions of the extracted image. Thus, the image should be $2\,extr\_coeff\cdot sma \times 2\,extr\_coeff\cdot smb$, where $sma$ and $smb$ are the semi-major and semi-minor axes respectively. 
+The section about good star selecting is used to describe selecting stars (with $S/N>SN\_limit$ and the star detection $cl>=star\_cl$)  for PSF fitting that means the fitting of the extracted images of that stars. The PSF model (parameter window) can be $`gauss\textrm'$ or $`moffat\textrm'$. The dimensions of the created PSF image are $box\_PSF\times box\_PSF$. For the moffat function beta parameter is 4.765 but can be changed manually or found by fitting the star image.
+The parameter $rmin\_bulge$ decsribes the central area of the galaxy $rmin\_bulge\cdot fwhm$ which should be masked during the finding initial guesses.
+In section \textbf{Cosmology} one can define the cosmology model.
+In section about finding initial parameters some limit values are determined to separate early and late type galaxies as well as edge-on and non-edge-on galaxies.
+
+In DECA we use three ways to find initial values of parameters that would be then put into GALFIT template file. $Way = 2$ is for fitting  azimuthal profile of non-edge-on galaxies and for analyzing the minor axis cut of edge-on galaxies. $Way = 3$ is for fitting the photometric profile which is the major axis cut. In $way = 4$ the correlations between SExtractor and GALFIT parameters are used.
+The parameter $way\_ini$ defines the way how to find initial guesses at first. If the found values are bad (e.g. $m0d=nan$ or $n>6.$) then the next way will be applied to find the initial guesses. 
+The parameter $one\_dec=`YES\textrm'$ if you want to perform only one GALFIT fitting procedure even if it fails. This mode is fast but for some galaxies DECA need to find the best solution several times.     
+In order to find truncation radius (for edge-on galaxies) you can specify the parameters in the corresponding section. $N\_min$ means the number of pixels which can be detected as a truncation less than 1 rms.
+
+\centerline{\textbf{Very important options for GALFIT}:}
+
+The parameters $inner\_trunc = 0$ means that the GALFIT truncation function is used and if the truncation radius is much less than the outer isophote that model will be accepted. If it equals 1 then the model with so short truncation radius will be rejected. 			
+The parameter $dust\_mask = 0$ is needed if you want to mask the central dust lane.
+The parameter $fit\_sky = 0$ means to let GALFIT find the sky background during decomposition process.			
+$fix\_ell = 0$ is fixing bulge ellipticity ($ell\_b=0.$).
+$fix\_c = 0$ is fixing bulge ellipse index ($ell\_c=0.$). 
+
+At last, the parameter $lim\_pars=0$ says that you want to constrain some initial parameters, for instance, you wish that the central surface brightness variations of the disk during GALFIT decomposition would be $|\Delta \mu_\mathrm{0,d}|<0.5$~mag arcsec$^{-2}$. You can add or change some constrain values in the file \texttt{constraints.py}.   
+\newline
+
+\centerline{\textbf{DECA modes:}}
+\texttt{\$ python [path\_to\_DECA]/deca.py [N] [mode]},
+
+where $N$ is the number of the galaxy and $mode$ is the DECA working regime.
+
+\centerline{\textbf{mode:}}
+\begin{description}
+\item[0] Usual mode (image preparation, PSF creation, sky background estimation, initial parameters, GALFIT)
+\item[1]	Only sky background estimation
+\item[20]	1 + PSF parameters + PSF image 
+\item[21]	1 + PSF parameters (without creation of  the PSF image)
+\item[30]	20 + Creation of the extracted galaxy image with masked contaminants + Sextracter parameters
+\item[4]	30 + Searching for the initial guesses
+\item[5]	Only sophisticated analysis for edge-on galaxies (without GALFIT running)
+\end{description}
+
+
+\pagebreak
+\begin{thebibliography}{99}
+
+\bibitem{Bertin}
+ %\refitem{article}
+ Bertin, E. \& Arnouts, S. 1996, A\&AS, 117, 393
+
+\bibitem{Peng02}
+ %\refitem{article}
+ Peng, C.Y. et al. 2002, AJ, 124, 266
+
+\bibitem{Peng10}
+ %\refitem{article}
+ Peng, C.Y. et al. 2010, AJ, 139, 2097
+
+\bibitem{Mosenkov}
+ %\refitem{article}
+ Mosenkov, A.V. 2013, Bulletin of SAO, 427, 1102 
+
+\bibitem{Ahn}
+ Ahn et al. 2012, ApJS, 203, 21
+
+\bibitem{Bertin_manual} 
+ https://www.astromatic.net/pubsvn/software/SExtractor/trunk/doc/SExtractor.pdf
+
+\bibitem{Lawrence}
+ Lawrence, A. et al. 2007, MNRAS, 379, 1599
+
+\bibitem{Navarro}
+ %\refitem{article}
+ Martin-Navarro, I. et al. 2012, MNRAS, 427, 1102
+
+\bibitem{Peng}
+ http://users.obs.carnegiescience.edu/peng/work/galfit/README.pdf
+ 
+
+\bibitem{Skrutskie}
+ Skrutskie, M.F. et al. 2006, AJ, 131, 1163
+ 
+\bibitem{Wright}
+ Wright, E.L. et al. 2010, AJ, 140, 1868 
+
+\bibitem{Vikram}
+V.~Vikram, Y.~Wadadekar, A.K.~Kembhavi, et al. 2010, MNRAS. \textbf{409}, 1379.
+
+ 
+\end{thebibliography}
+
+\end{document}
+

@@ -1,0 +1,823 @@
+#!/usr/bin/python
+'''
+The program to find the initial parameters values. Ways to find:
+	I. Cut along the major axis and two symmetric cuts along the z-axis where the bulge influence is negligible
+	II. Gueses from the correlations with measured fluxes, CI etc.
+	III. From the found correlations between bulge and disc parameters
+
+I. Cut along the major axis and two symmetric cuts along the z-axis where the bulge influence is negligible
+	1. Profile along the major axis. 
+	2. Estimation of parameters: First - Disk, Second - Bulge
+			Disk:  - chose points from the ellipse fitting where disk is dominating 
+			       - extrapolate to the center -> find m0d -> h
+			Bulge: - extract found Disk from the galaxy -> Mbulge
+			       - Find effective radius of the bulge reb -> meb
+			       - Calculate n via M,reb,meb
+'''
+
+
+# -*- coding:  cp1251 -*-
+
+
+#from pyraf import iraf
+import random as random_number
+import sys
+import math
+import numpy as np
+from scipy import stats
+import scipy as sp
+from scipy import interpolate
+import matplotlib.pyplot as plt
+import matplotlib.mlab as mlab
+import matplotlib.patches as patches
+import matplotlib.path as path
+from matplotlib.ticker import NullFormatter
+from numpy import *
+from pylab import *
+import os
+import shutil
+import subprocess
+from os.path import exists
+import fileinput
+import pyfits
+import re
+#import numdisplay
+#import minuit
+from scipy.odr.odrpack import *
+from scipy.integrate import simps, trapz
+import scipy.optimize as optimize
+from scipy import special
+tmp_out = sys.stdout
+
+sys.path.append('..')
+sys.path.append('../ini_modules')
+sys.path.append('../analysis_modules')
+sys.path.append('../output_modules')
+sys.path.append('../prep_modules')
+
+
+import setup
+
+import rmax_finder
+#import superellipse
+
+rmin_bulge_coeff = setup.rmin_bulge
+Ccr = setup.Ccr
+
+file_weight = 'weight.fits'
+file_constraints = 'constr.txt'
+file_galfit_input = 'input.txt'
+file_field = 'field.fits'
+file_psf_field = 'psField.fit'	# for SDSS
+file_field1 = 'field1.fits'
+file_field2 = 'field2.fits'
+file_gal = 'galaxy.fits'
+file_sex_field = 'field.cat'
+file_sex_galaxy = 'galaxy.cat'
+file_gal_clean = 'galaxy_clean.fits'
+file_gal_clean_new = 'galaxy_clean1.fits'
+file_segm = 'segm.fits'
+file_badpix = 'badpix.txt'
+file_inter = 'interact.cat'
+file_psf = 'psf.fits'
+file_psf_model = 'psf_model.fits'
+file_nonpar = 'nonpar.txt'
+file_galfit_outimage = 'galfit_out.fits'
+
+
+#******* Functions to describe the model ********#
+def Iser(r,reb,Ieb,n):
+	# Sersic function: for bulge and bar
+	nu = 1.9992*n - 0.3271
+	Iser = Ieb * np.exp( -nu * ( (fabs(r)/reb)**(1.0/n) - 1.0 ) )
+	return Iser
+
+def Iexp(r,h,I0d):
+	# Exponential disc
+	Iexp = I0d * np.exp( -fabs(r)/h )
+	return Iexp
+
+def Iedge(r,h,I0d):
+	# Radial distribution for the edge-on disc
+	r = fabs(r)
+	I = I0d * r/h * sp.special.kn(1,r/h)
+	return I
+
+def Iz(z,z0,I0d):
+	# Vertical distribution for the edge-on disc
+	Iz = I0d * (1.0 / np.cosh(fabs(z)/z0)) ** 2
+	return Iz 
+
+def Igau(r,I0,fwhm):
+	# Gaussian function for AGN
+	sigma = fwhm/2.354
+	return I0*np.exp(-r*r/(2.*sigma**2))
+
+#******* Functions to find fluxes  ********#
+def R(c):
+	return math.pi*(c+2.) / (4.*special.beta(1./(c+2.),1.+1./(c+2.)))
+
+def scale(par,D):
+	# returns in kpc, if given in arcsec. D = [Mpc]
+	return par*D*1000./206265.
+
+def unscale(par,D):
+	# returns in arcsec, if given in kpc. D = [Mpc]
+	return  par*206265./(D*1000.)
+
+def magDisk_face_on(m0d,h,q,c):
+	# For face-on and inclined discs with q flatness. h=[arcsec], m0d=[mag arcsec^-2] - obseved SB, c - ellipse index
+	return -2.5*log10(2.*math.pi) + m0d - 5.*log10(h) + Aint(q) + 2.5*log10(R(c))
+
+def magDisk_edge_on(S0d,h,z0,c):
+	# For edge-on discs. z0,h=[arcsec], S0d=[mag arcsec^-2] - obseved SB, c - ellipse index
+	return -2.5*log10(2.*math.pi) + S0d - 2.5*log10(z0*h) + 2.5*log10(R(c))
+
+def MagDisk_edge_on(S0d,h,z0,c,z,filter_name,colour_name,colour_value,Aext):
+	# Absolute mag for edge-on disks.
+	return magDisk_edge_on(S0d,h,z0,c) - 5.*log10(D_L(z)) - Aext - A_kcor(filter_name, z, colour_name, colour_value) - 25.
+
+def magGaussian(m0,fwhm,q,c):
+	# magnitude for gaussian.
+	return -2.5*log10(2.*math.pi) + m0 - 5.*log10(fwhm) + Aint(q) + 2.5*log10(R(c))
+
+def MagGaussian(m0,fwhm,q,c,z,filter_name,colour_name,colour_value,Aext):
+	return magGaussian(m0,fwhm,q,c) - 5.*log10(D_L(z)) - Aext - A_kcor(filter_name, z, colour_name, colour_value) - 25.
+
+def MagDisk_face_on(m0d,h,q,c,z,filter_name,colour_name,colour_value,Aext):
+	# Absolute magnitude for face-on and inclined disks
+	return magDisk_face_on(m0d,h,q,c) - 5.*log10(D_L(z)) - Aext - A_kcor(filter_name, z, colour_name, colour_value) - 25.
+
+def Luminosity(Magnitude,filter_name):
+	# Absolute Magnitude -> Luminosity (in Lsun(filter)
+	return 10**((filters(filter_name)-Magnitude)/2.5)
+
+def magBulge(reb,meb,n,q,c):
+	# Apparent magnitude of the bulge
+	nu = 1.9987*n-0.3267
+	An = 2.5*log10(2.*math.pi*n/(nu**(2.*n)) * special.gamma(2.0*n)) + 1.0857*nu
+	return - 5.*log10(reb) + meb - An - 2.5*log10(q) + 2.5*log10(R(c))
+
+def MagBulge(reb,meb,n,q,c,z,filter_name,colour_name,colour_value,Aext):
+	# Absolute magnitude of the Sersic model
+	return magBulge(reb,meb,n,q,c) - 5.*log10(D_L(z)) - Aext - A_kcor(filter_name, z, colour_name, colour_value) - 25.
+
+def m0d_corr(m0d,q,Aext,z,a3=0.5):
+	# Correction of the disk central SB for internal and external extinction and cosmological dimming
+	return m0d + a3*log10(1./q) - Aext - 2.5*log10( (1.+z)**3 )
+
+def meb_corr(meb,q,Aext,z,a4=0.5):
+	# Correction of the bulge central SB for internal and external extinction and cosmological dimming
+	return meb + a4*log10(1./q) - Aext - 2.5*log10( (1.+z)**3 )
+
+def MagDisk_face_on_corr(MagDisk,q,a5):
+	# Correction of the Disk Magnitude for the internal extinction
+	return MagDisk -a5*log10(1./q)
+
+def MagBulge_corr(MagBulge,q,a6):
+	# Correction of the Bulge Magnitude for the internal extinction
+	return MagBulge -a6*log10(1./q)
+
+def line(B, x):
+    return (1.0857/B[0])*fabs(x) + B[1]
+
+
+def bulge(B, x):
+	return B[0]*np.exp( -(1.9992*B[2] - 0.3271)*((fabs(x)/B[1])**(1./B[2]) - 1.) )
+
+def bulge_disk(B, x):
+	return B[2]*np.exp( -(1.9992*B[4] - 0.3271)*((fabs(x)/B[3])**(1./B[4]) - 1.) ) + B[1]*np.exp(-fabs(x)/B[0])
+
+def disk_disk(B,x):
+	return B[1]*np.exp(-fabs(x)/B[0]) + B[3]*np.exp(-fabs(x)/B[2])
+
+def chi2(Igal,r,h,I0d,reb,Ieb,n):
+	chi = (1./(len(Igal)-5)) * sum( (Igal - Iser(r,reb,Ieb,n) - Iexp(r,h,I0d))**2 )
+	#print chi
+	return chi
+
+def disk_edge(B,z):
+	#*** For edge-on disk SB in mag/arcsec^2 (along z-axis).  Sech^2-law. ***
+	# B[0] = I0d
+	# B[1] = z0 
+	# B[2] = z_c
+	z = np.array(z)	
+	return B[0] * ( 1. / (np.cosh(fabs(z-B[2])/B[1]))**2   )
+
+def plotter(mag,r,m0d,h,meb,reb,n,m0):
+	plt.figure(5)
+	I0d = 10**(0.4*(m0-m0d))
+	Ieb = 10**(0.4*(m0-meb))
+	plt.plot(r, mag,'o',color='black')
+	plt.plot(r, m0d + 1.0857*fabs(r)/h, 'r-', color='green')
+	plt.plot(r, -2.5*log10( Ieb*np.exp( -(1.9992*n - 0.3271)*((fabs(r)/reb)**(1./n) - 1.) )) + m0 , 'r-', color='blue')
+	plt.plot(r, -2.5*log10( Ieb*np.exp( -(1.9992*n - 0.3271)*((fabs(r)/reb)**(1./n) - 1.) ) + I0d*np.exp(-fabs(r)/h)) + m0, 'r-', color='red')
+
+	xlim(0,max(r)+1.)
+	ylim(max(mag),min(mag)-1.)
+	plt.xlabel(r'r (arcsec)', fontsize=30)
+	plt.ylabel(r'$\mu$ (mag arcsec$^{-2}$)', fontsize=30)
+	plt.savefig("1dfit_prof.png", transparent = False)
+
+
+def rbulge_dom(r_int,Int,h,m0d,pix2sec):
+	# Function to find the bulge domination radius
+	I_bulge = Int - Iexp(r_int,h,10**(0.4*(m0 - m0d + 5.*log10(pix2sec))))
+	max_bul=max(I_bulge)
+	I_bulge = I_bulge/max(I_bulge)
+	r1 = []
+	I_bulge1 = []
+
+	for k in range(len(I_bulge)):
+		if I_bulge[k]>0.2:
+			I_bulge1.append(Int[k])
+			r1.append(r_int[k])
+	I_bulge1 = np.array(I_bulge1)
+	r1 = np.array(r1)
+
+
+
+	dataToFit = RealData(r1*pix2sec, -2.5*log10(I_bulge1)+m0 + 5.*log10(pix2sec))
+	mo = Model(disk_edge)
+	fitting = ODR(dataToFit, mo, [min(-2.5*log10(I_bulge1)+m0 + 5.*log10(pix2sec)),1.,0.])
+	fitting.set_job()
+	fit_result = fitting.run()
+	A = fit_result.beta[0]
+	B = fit_result.beta[1]
+	C = fit_result.beta[2]
+
+
+	def func1(r):
+		return line([h*pix2sec,m0d],r*pix2sec) - disk_edge([A,B,C], r*pix2sec)
+	try:
+		rmin = (sp.optimize.bisect(func1,0,rmax*pix2sec))/pix2sec	# in pix
+		#print rmin*pix2sec
+		for k in range(len(r_int)):
+			if r_int[k]>rmin_bulge and  r_int[k]<rmax-rmax/5.:			#!!! Mistake somewhere!!!
+				rr.append(r_int[k]*pix2sec)
+				mag.append(-2.5*log10(Int[k]) + m0 + 5.*log10(pix2sec))
+		#print len(r_int)
+		dataToFit = RealData(rr, mag)
+		mo = Model(line)
+		fitting = ODR(dataToFit, mo, [1.,1.])
+		fitting.set_job()
+		fit_result = fitting.run()
+		#h = fit_result.beta[0]/pix2sec  # now in pixels
+		#m0d = fit_result.beta[1]	# in mag/arcsec^2
+	except :
+		rmin = rmax/3. - (rmax/2.)/4.
+		#r1 = r1 + C/pix2sec	
+	return rmin
+
+
+
+#******************************************************************************************************
+#******************************************************************************************************
+#*********************************** THE MAIN WAYS TO FIND INITIALS ***********************************
+#IV. From 1D profile fitting
+def ini_prof(way,xc_ima,yc_ima,theta,m0,pix2sec,backgr_dev,rmax,fwhm,model,ellip,C31,ff):
+	file_ima = file_gal_clean
+	rmin_bulge = rmin_bulge_coeff*fwhm/pix2sec	# This is a gap to mask central bright pixels
+
+	#*** The main functions: ***
+	def cut_major(file_ima,xc_ima,yc_ima,theta):
+		#1. Profile cut along the major axis
+		if theta<0.:	theta = 360+theta
+		f = open("cuts.cl", "w") 
+		sys.stdout = f
+		print "# Cuts"
+		print "set imtype=fits"
+		print "pvector %s xc=%i yc=%i theta=%.1f vec_output= \"profileima.fits\" out_type=\"image\"" % (file_ima,xc_ima,yc_ima,theta)
+		print "logout"
+		sys.stdout = tmp_out
+		f.close()
+
+	def major_prof(m0,rmax,backgr_dev):
+		# Function to find a bulge domination radius rmin
+		hdulist = pyfits.open("profileima.fits")
+		scidata = hdulist[0].data
+		prihdr = hdulist[0].header
+		nx = int(prihdr['NAXIS1'])
+		xc = list(scidata).index(max(scidata))
+
+		r_int = []
+		Int = []
+		
+		for k in range(0, nx):
+			if scidata[k]>2.*backgr_dev:			# !!!!!!!!!!!!!!!
+				Int.append(scidata[k]) # In case if there is sky subtraction in these pixels
+				r_int.append(k - xc + 0.5)		# add 0.5pix shift (BUDDA)
+
+
+		#plt.plot(r, Int,'r-',color='red', lw=3)
+		#plt.show()
+
+		rr = []
+		mag = []
+
+		for k in range(len(r_int)):
+			if r_int[k]>rmax/2. - (rmax/2.)/4. and  r_int[k]<rmax - (rmax/2.)/4.:
+				rr.append(r_int[k]*pix2sec)
+				mag.append(-2.5*log10(Int[k]) + m0 + 5.*log10(pix2sec))
+		#print len(r_int)
+		dataToFit = RealData(rr, mag)
+		mo = Model(line)
+		fitting = ODR(dataToFit, mo, [1.,1.])
+		fitting.set_job()
+		fit_result = fitting.run()
+		h = fit_result.beta[0]/pix2sec # now in pixels
+		m0d = fit_result.beta[1]	# in mag/arcsec^2
+
+
+		'''
+		plt.plot(np.array(r)*pix2sec,-2.5*log10(Int) + m0+ 5.*log10(pix2sec),'o',color='black',markersize=3)
+		plt.plot(rr,mag,'o',color='blue',markersize=8)
+		plt.plot(np.array(r)*pix2sec,line([h*pix2sec,m0d],np.array(r)*pix2sec),'r',color='blue',lw=2)
+		#plt.show()
+		#exit()
+		'''
+		def Iexp(r,h,I0d):
+			# Exponential disc
+			Iexp = I0d * np.exp( -fabs(r)/h )
+			return Iexp
+
+
+		I_bulge = Int - Iexp(r_int,h,10**(0.4*(m0 - m0d + 5.*log10(pix2sec))))
+		max_bul=max(I_bulge)
+		I_bulge = I_bulge/max(I_bulge)
+
+		r1 = []
+		I_bulge1 = []
+
+		for k in range(len(I_bulge)):
+			if I_bulge[k]>0.2:
+				I_bulge1.append(Int[k])
+				r1.append(r_int[k])
+
+		'''
+		def disk_edge(B,z):
+			#*** For edge-on disk SB in mag/arcsec^2 (along z-axis).  Sech^2-law. ***
+			# B[0] = I0d
+			# B[1] = z0 
+			# B[2] = z_c
+			z = np.array(z)	
+			return B[0] * ( 1. / (np.cosh(fabs(z-B[2])/B[1]))**2   )
+		'''
+
+		dataToFit = RealData(r1, -2.5*log10(I_bulge1)+m0)
+		mo = Model(disk_edge)
+		fitting = ODR(dataToFit, mo, [min(-2.5*log10(I_bulge1)+m0),1.,0.])
+		fitting.set_job()
+		fit_result = fitting.run()
+		A = fit_result.beta[0]
+		B = fit_result.beta[1]
+		C = fit_result.beta[2]
+
+
+		def func1(r):
+			return line([h,m0d],r) - disk_edge([A,B,C], r)
+		try:
+			rmin = sp.optimize.bisect(func1,0,nx/2)
+		except ValueError:
+			rmin = rmin_bulge
+		r1 = r1 + C
+
+		# Averaging:
+		rr = []
+		II = []
+		for k in range(len(r_int)):
+			if r_int[k]<0.:
+				rr.append(int(floor(r_int[k])))
+				II.append(Int[k])
+			if r_int[k]>0.:
+				rr.append(int(ceil(r_int[k])))
+				II.append(Int[k])
+		rrr = []
+		III = []
+
+		k_left = rr.index(-1)
+		k_right = rr.index(1)
+
+		for x in arange(k_right,len(rr),1):		
+			for y in arange(0,k_left,1):
+				if fabs(rr[x])==fabs(rr[y]):
+					rrr.append(rr[x])
+					III.append((II[x]+II[y])/2.)
+		#plt.plot(rr,II)
+		#plt.plot(rrr,III)
+
+		#plt.show()
+		#exit()
+
+
+		return rrr, III, h, m0d 
+
+
+
+	def azim_prof(model,r,I,rmax,m0,pix2sec,backgr_dev):
+		# Function to find the disk parameters (if it exists here).
+		# OUTPUT: r,I,h,m0d
+		# r>rmin_bulge
+
+		r_int = []
+		Int = []
+
+		for k in range(len(r)):
+			if I[k]>backgr_dev and r[k]>rmin_bulge:
+				r_int.append(r[k])
+				Int.append(I[k])
+
+
+		if model!='ser':
+			rr = []
+			mag = []
+
+			if model=='exp+ser' or model=='edge+ser':
+				for k in range(len(r_int)):
+					if r_int[k]>rmax/2. - (rmax/2.)/4. and  r_int[k]<rmax- (rmax/2.)/4.:
+						rr.append(r_int[k]*pix2sec)
+						mag.append(-2.5*log10(Int[k]) + m0 + 5.*log10(pix2sec))
+
+
+				dataToFit = RealData(rr, mag)
+				mo = Model(line)
+				fitting = ODR(dataToFit, mo, [1.,1.])
+				fitting.set_job()
+				fit_result = fitting.run()
+				h = fit_result.beta[0]/pix2sec  # now in pixels
+				m0d = fit_result.beta[1]	# in mag/arcsec^2
+
+			elif model=='exp' or model=='edge':
+				for k in range(len(r_int)):
+					if r_int[k]>rmin_bulge and r_int[k]>h/2. and  r_int[k]<rmax-rmax/5.:
+						rr.append(r_int[k]*pix2sec)
+						mag.append(-2.5*log10(Int[k]) + m0 + 5.*log10(pix2sec))
+				dataToFit = RealData(rr, mag)
+				mo = Model(line)
+				fitting = ODR(dataToFit, mo, [1.,1.])
+				fitting.set_job()
+				fit_result = fitting.run()
+				h = fit_result.beta[0]/pix2sec  # now in pixels
+				m0d = fit_result.beta[1]	# in mag/arcsec^2
+
+		else:
+			h = 99999.
+			m0d = 99999.
+
+		r_int1 = []
+		Int1 = []
+
+		for k in range(len(r)):
+			if I[k]>backgr_dev:
+				r_int1.append(r[k])
+				Int1.append(I[k])
+
+		return r_int, Int, r_int1, Int1, h, m0d 
+
+
+	def bulge_fitting_null(I_ima,r,m0d,h,m0,C31,backgr_dev,sma):
+		try:
+			if backgr_dev>0.:	I_lim = backgr_dev
+			else:
+				nn = 0
+				I_lim = 0.
+				for k in range(len(r)):
+					if r[k]>sma + sma/10.:
+						I_lim = I_lim + I_ima[k]
+						nn = nn + 1
+				I_lim = I_lim/nn
+		except:
+			I_lim = I_ima[r.index(max(r))]
+
+		if m0d!=99999.:
+			I0d = 10**(0.4*(m0-m0d+5.*log10(pix2sec)))
+			I_disk = Iexp(r,h,I0d)
+			I_bulge = I_ima - I_disk
+		else:
+			I_bulge = I_ima
+
+		I_bulge1 = []
+		r1 = []
+		for k in range(len(I_bulge)):
+			if I_bulge[k]>I_lim:
+				I_bulge1.append(I_bulge[k])
+				r1.append(r[k])
+
+		try:
+			tck = interpolate.splrep(np.array(r1)*pix2sec,np.array(I_bulge1),s=0)
+			r_interp = np.arange(min(r1)*pix2sec,max(r1)*pix2sec,0.05)
+			I_interp = interpolate.splev(r_interp,tck,der=0)
+			mag_interp = m0 - 2.5*log10(I_interp) + 5.*log10(pix2sec)
+			L_bulge = trapz(I_interp, r_interp)
+		except:
+			r_interp = np.array(r1)*pix2sec
+			I_interp = I_bulge1
+			L_bulge = trapz(I_interp, r_interp)
+
+
+
+		m_bulge1 = m0 - 2.5*log10(I_bulge1) + 5.*log10(pix2sec)
+		
+
+		S = 0.
+		'''
+		plt.plot(np.array(r)*pix2sec,-2.5*log10(I_ima)+m0+5.*log10(pix2sec),'o')
+		plt.plot(np.array(r)*pix2sec,m0-2.5*log10(Iexp(np.array(r)*pix2sec,h*pix2sec,10**(0.4*(m0-m0d)))))
+		plt.plot(np.array(r1)*pix2sec,-2.5*log10(I_bulge1)+m0+5.*log10(pix2sec),'o')
+		ylim(28,18)
+		plt.show()
+		exit()
+		'''
+		for k in range(len(r_interp)):
+			if S<=L_bulge/2.:
+				S = (r_interp[k+1]-r_interp[k])*(I_interp[k]+I_interp[k+1])/2.+S
+				reb = r_interp[k]
+				Ieb = I_interp[k]
+
+
+		meb = -2.5*log10(Ieb)+m0+5.*log10(pix2sec) # + 1.	# !!! ADD 1 mag !!!
+
+		if C31>Ccr:
+			n0 = 3.4
+		else:
+			n0 = 1.5		
+		
+		return meb,reb,n0
+
+
+	def bulge_fitting(I_ima,r,m0d,h,meb,reb,n,m0,NOISE):
+		#Disc model subtraction from the image
+		if m0d!=99999.:
+			I0d = 10**(0.4*(m0-m0d+5.*log10(pix2sec)))
+			I_disk = Iexp(r,h,I0d)
+			I_bulge = I_ima - I_disk
+		else:
+			I_bulge = I_ima
+
+		I_bulge1 = []
+		r1 = []
+		for k in range(len(I_bulge)):
+			if I_bulge[k]>NOISE:
+				I_bulge1.append(I_bulge[k])
+				r1.append(r[k])
+		dataToFit = RealData(r1, I_bulge1)
+		mo = Model(bulge)
+		fitting = ODR(dataToFit, mo, [10**(0.4*(m0-meb+5.*log10(pix2sec))),reb,n])
+		fitting.set_job()
+		fit_result = fitting.run()
+		a = fit_result.beta[0]
+		b = fit_result.beta[1]
+		c = fit_result.beta[2]
+		eps = fabs(median(fit_result.eps))
+		return -2.5*log10(a)+m0+5.*log10(pix2sec),b,c
+
+	def disk_fitting(I_ima,r,h,m0d,meb,reb,n,m0,NOISE):
+		#Bulge model subtraction from the image
+		Ieb = 10**(0.4*(m0-meb))
+		I_bulge = Iser(r,reb,Ieb,n)
+		I_disk = I_ima - I_bulge
+		I_disk1 = []
+		r1 = []
+		for k in range(len(I_disk)):
+			if I_disk[k]>NOISE:
+				I_disk1.append(I_disk[k])
+				r1.append(r[k])
+		m_disk1 = m0 - 2.5*log10(I_disk1)
+		#plt.plot(r11,m_b,'o',color='green')
+		#plt.show()
+		dataToFit = RealData(r1, m_disk1)
+		mo = Model(line)
+		fitting = ODR(dataToFit, mo, [h,m0d])
+		fitting.set_job()
+		fit_result = fitting.run()
+		a = fit_result.beta[0]
+		b = fit_result.beta[1]
+		eps = fabs(median(fit_result.eps))	
+
+		return a,b	
+
+	def iter_fitting(I_ima,r,m0d,h,m0,C31,NOISE,sma):
+		# We use the initial parameters of disk found in ...
+		i = 0
+		eps = 0.1
+		h0 = h + 2.*eps
+		m0d0 = m0d + 2.*eps
+		meb,reb,n = bulge_fitting_null(I_ima,r,m0d,h,m0,C31,NOISE,sma)
+
+
+
+
+		i = 0
+		m = 5
+		chi = []
+		while i<=m and n>0.3:
+			meb,reb,n = bulge_fitting(I_ima,r,m0d,h,meb,reb,n,m0,NOISE)
+			#print meb,reb,n
+			h0 = h
+			m0d0 = m0d
+			h,m0d = disk_fitting(I_ima,r,h,m0d,meb,reb,n,m0,NOISE)
+			chi.append(chi2(I_ima,r,h,10**(0.4*(m0-m0d)),reb,10**(0.4*(m0-meb)),n))
+			i += 1
+			if i>=m:
+				if (np.std(chi)>0.0001 and n>0.3):
+					m += 1 		
+		return h,m0d,meb,reb,n,i
+
+	def simult_fitting(way,model,r_int,Int,r_int1,Int1,rmax,backgr_dev,m0,pix2sec,m0d,h,ellip,C31):
+		
+		if model=='ser':
+			meb0,reb0,n0 = bulge_fitting_null(Int1,r_int1,m0d,h,m0,C31,backgr_dev,rmax)
+			meb,reb,n = bulge_fitting(Int,r_int,m0d,h,meb0,reb0,n0,m0,backgr_dev)
+			rmax = 99999.
+			cb = 0.
+			cd = 99999.
+			elld = 99999.
+			ellb = ellip
+			h = 99999.
+			m0d = 99999.
+			elld = 99999.
+			cd = 99999.
+
+		elif model=='exp+ser' or model=='edge+ser':
+			meb,reb,n = bulge_fitting_null(Int1,r_int1,m0d,h,m0,C31,backgr_dev,rmax)
+			#print h,m0d,meb,reb,n
+			
+			if way=='cut':
+				meb = meb + 1.
+				reb = reb*2.
+			else:
+				meb = meb + 1.5
+				reb = reb*3.	
+			
+				
+			if way=='cut':
+				r = r_int1
+				I_ima = Int1
+			else:
+				r = r_int
+				I_ima = Int	
+
+			'''
+			plt.figure(100)
+			plt.plot(np.array(r)*pix2sec,-2.5*log10(I_ima)+m0+5.*log10(pix2sec))
+			ylim(21,15)
+			plt.savefig('ima.eps', transparent = False)
+			'''
+			def fit_all(r,I_ima,m0d,h,m0,meb,reb,n):
+				dataToFit = RealData(r, I_ima)
+				mo = Model(bulge_disk)
+				fitting = ODR(dataToFit, mo, [h,10**(0.4*(m0-m0d+5.*log10(pix2sec))),10**(0.4*(m0-meb+5.*log10(pix2sec))),reb,n])
+				fitting.set_job()
+				fit_result = fitting.run()
+				h = fit_result.beta[0]
+				m0d = -2.5*log10(fit_result.beta[1]) + m0 +5.*log10(pix2sec)
+				meb = -2.5*log10(fit_result.beta[2]) + m0 +5.*log10(pix2sec)
+				reb = fit_result.beta[3]
+				n = fit_result.beta[4]
+				eps = fabs(median(fit_result.eps))
+				return h,m0d,meb,reb,n
+			'''
+			def fit_2exp(r,I_ima,m0d,h,m0):
+				m2exp = []
+				r2 = []
+				rmin1 = 55.
+				for k in range(len(I_ima)):
+					if (I_ima[k] - Iexp(r[k],h,10**(0.4*(m0-m0d)))) >0. and r[k]>rmin1:
+						m2exp.append(-2.5*log10(I_ima[k] - Iexp(r[k],h,10**(0.4*(m0-m0d)))) + m0)
+						r2.append(r[k])
+				dataToFit = RealData(r2, m2exp)
+				mo = Model(line)
+
+				fitting = ODR(dataToFit, mo, [20,22])
+				fitting.set_job()
+				fit_result = fitting.run()
+				h1 = fit_result.beta[0]
+				m0d1 = fit_result.beta[1]
+				eps = fabs(median(fit_result.eps))
+				return m0d1+1.822,h1*1.67835
+			'''
+			h,m0d,meb,reb,n = fit_all(r,I_ima,m0d,h,m0,meb,reb,n)
+			#print h,m0d,meb,reb,n
+
+			rmax = 5.*h
+			cb = 0.
+			if model=='exp+ser':
+				cd = 0.
+				elld = ellip
+			elif model=='edge+ser':
+				cd = -1.
+				elld = 99999.
+			import ell
+			try:
+				ellb,bb4 = ell.read_ell('ellipse.txt',reb,1.)
+				print 'ell_bul=%.3f' % (ellb)
+			except:
+				ellb = 0.
+				print 'Bulge ellipticity was not measured! Set to 0.!'
+
+		elif model=='exp' or model=='edge':
+			meb = 99999.
+			reb = 99999.
+			n = 99999.
+			ellb = 99999.
+			cb = 99999.
+			rmax = 5.*h
+			if model=='exp':
+				cd = 0.
+				elld = ellip
+			elif model=='edge':
+				cd = -1.
+				elld = 99999.
+
+
+		return h,m0d,elld,cd,meb,reb,n,rmax,ellb,cb
+
+
+
+	#*****************************************Execution:***************************************************
+	#*****************************************Execution:***************************************************
+	#*****************************************Execution:***************************************************
+	#*****************************************Execution:***************************************************
+	if way=='azim':
+		print 'Azimuthal profile is being analyzed ...'
+		r,I = loadtxt('ellipse.txt', usecols=[1,2], unpack=True, skiprows = 6)
+		r_int,Int,r_int1,Int1,h,m0d = azim_prof(model,r,I,rmax,m0,pix2sec,backgr_dev)
+		# here	r_int,  Int - for the profile with masked center pixels (r>rmin_bulge)
+		#	r_int1,Int1 - the same but with central pixels included
+		try:
+			rmax = rmax_finder.rmax_find(r,I,h,m0d,m0,pix2sec,backgr_dev)
+		except:
+			print 'Rmax was not found properly!'
+
+		m0d0 = m0d
+		h0 = h
+		h,m0d,elld,cd,meb,reb,n,rmax0,ellb,cb = simult_fitting(way,model,r_int,Int,r_int1,Int1,rmax,backgr_dev,m0,pix2sec,m0d,h,ellip,C31)
+		#print h,m0d
+		#exit()
+
+		#if math.isnan(float(m0d))==True:
+		#	m0d = m0d0
+	if way=='cut':
+		print 'Major axis profile is being analyzed ...'
+		cut_major(file_ima,xc_ima,yc_ima,theta)
+		os.chmod(r"cuts.cl",0777)
+		subprocess.call("cl < cuts.cl -o", shell=True)
+		r_int,Int,h,m0d = major_prof(m0,rmax,backgr_dev)
+
+		try:
+			rmax = rmax_finder.rmax_find(r_int,Int,h,m0d,m0,pix2sec,backgr_dev)
+		
+		except:
+			print 'Rmax was not found properly!'
+		m0d0 = m0d
+		h0 = h
+		h,m0d,elld,cd,meb,reb,n,rmax0,ellb,cb = simult_fitting(way,model,r_int,Int,r_int,Int,rmax,backgr_dev,m0,pix2sec,m0d,h,ellip,C31)
+		if math.isnan(float(m0d))==True:
+			m0d = m0d0
+
+	if rmax<2.5*h:
+		m0d = m0d0
+		h = h0
+
+	if model=='edge' or model=='edge+ser':
+		z0=h/4.
+	else:
+		z0=99999.
+
+
+	cd=0.; elld=ellip; cb=0.; ellb=0.
+
+	if model=='exp' or model=='edge':
+		ellb=99999.
+		cb=99999.
+	if model=='edge' or model=='edge+ser':
+		elld=99999.
+		cd=-1.
+	if model=='ser':
+		elld=99999.
+		cd=99999.
+		ellb=ellip
+
+	print '\n********************* INITIALS *********************'
+	if model=='exp' or model=='exp+ser':
+		print 'DISK:'
+		print 'm0d=%.2f (mag arcsec-2), h=%.2f (arcsec)' % (m0d,h*pix2sec)
+		print >> ff, 'm0d=%.2f (mag arcsec-2), h=%.2f (arcsec)' % (m0d,h*pix2sec)
+	if model=='edge' or model=='edge+ser':
+		print 'EDGE-ON DISK:'
+		print 'm0d=%.2f (mag arcsec-2), h=%.2f (arcsec), z0=%.2f (arcsec)' % (m0d,h*pix2sec,z0*pix2sec)	
+		print >> ff, 'm0d=%.2f (mag arcsec-2), h=%.2f (arcsec), z0=%.2f (arcsec)' % (m0d,h*pix2sec,z0*pix2sec)			
+	if model=='edge+ser' or model=='exp+ser' or model=='ser':
+		print 'BULGE:'
+		print 'meb=%.2f (mag arcsec-2), reb=%.2f (arcsec), n=%.2f' % (meb,reb*pix2sec,n)
+		print >> ff, 'meb=%.2f (mag arcsec-2), reb=%.2f (arcsec), n=%.2f' % (meb,reb*pix2sec,n)
+	print '\n****************************************************'		
+
+
+	#print m0d,99999.,h,z0,elld,cd,rmax,meb,99999.,reb,n,ellb,cb 
+	return m0d,99999.,h,z0,elld,cd,rmax,meb,99999.,reb,n,ellb,cb
+
+#ini_prof('galaxy_clean.fits',695,718.0,0.,27.92,0.396,5.861,310,1.1,'exp+ser')
+#ini_prof('cut','galaxy_clean.fits',164.,144.,0.,27.92,0.396,10.,150.,1.3/0.396,'exp+ser',0.0)
+#ini_prof('azim',300.,300.,-1.4,27.92,0.396,7.99,13.5*4.,1.367,'exp+ser',0.006,4.78)	# for 2
+#ini_prof('cut',300.,300.,-1.4,27.92,0.396,7.99,13.5*4.,1.367,'exp+ser',0.006,4.78)

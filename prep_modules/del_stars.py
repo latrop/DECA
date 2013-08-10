@@ -1,0 +1,186 @@
+#!/usr/bin/python
+# -*- coding:  cp1251 -*-
+
+import sys
+import math
+import numpy as np
+from scipy import stats
+import scipy as sp
+import matplotlib.pyplot as plt
+import matplotlib.mlab as mlab
+import matplotlib.patches as patches
+import matplotlib.path as path
+from matplotlib.ticker import NullFormatter
+from numpy import *
+from pylab import *
+import os
+import shutil
+import subprocess
+import random
+import pyfits
+
+DECA_PATH = os.path.split(os.path.dirname(__file__))[0]
+
+sys.path.append(DECA_PATH)
+sys.path.append(DECA_PATH + '/ini_modules')
+sys.path.append(DECA_PATH + '/analysis_modules')
+sys.path.append(DECA_PATH + '/output_modules')
+sys.path.append(DECA_PATH + '/prep_modules')
+import setup
+
+tmp_out = sys.stdout
+
+
+
+
+def delete(xc_max,yc_max,xc,yc,r,Iav,Ierr,a,b,theta,noise):
+	if setup.add_contam_sextr==0:
+		f = open('badpix.txt', "a") 
+		shutil.copy('galaxy_clean.fits','galaxy_clean1.fits') 
+		shutil.copy('galaxy_clean.fits','galaxy_clean2.fits')
+	else:
+		f = open('badpix.txt', "w") 
+		shutil.copy('galaxy.fits','galaxy_clean1.fits') 
+		shutil.copy('galaxy.fits','galaxy_clean2.fits')	 
+
+
+
+	hdulist = pyfits.open('galaxy_clean1.fits', do_not_scale_image_data=True, mode='update')
+	img = hdulist[0].data
+	hdulist1 = pyfits.open('galaxy_clean2.fits', do_not_scale_image_data=True)
+	img1 = hdulist1[0].data
+	(ny,nx) = img.shape
+	I = img1
+
+	IMAX = []; xcmax = []; ycmax = []
+	for k in range(int(xc)-10,int(xc)+10,1):
+		for i in range(int(yc)-10,int(yc)+10,1):
+			IMAX.append(I[i,k])
+			xcmax.append(k)
+			ycmax.append(i)
+
+	IIMAX = max(IMAX)
+	for pp in range(len(IMAX)):
+		if IMAX[pp]==IIMAX:
+			xc_max = xcmax[pp]
+			yc_max = ycmax[pp]		
+
+
+	# xc, yc - pixels of maximum Intensity of the galaxy
+	lim = setup.lim
+	gap = setup.gap
+
+	N = len(Iav)
+
+	x = []
+	y = []
+	for k in range(nx):
+		for i in range(ny):
+			if I[i,k]>I[yc_max,xc_max] :
+				#x.append(k+1)
+				#y.append(i+1)
+				img[i,k] = 0.
+				print >>f, "%i %i" % (k+1,i+1)
+
+	#print xc,yc,a,b,theta
+	#exit()
+
+
+	I_MAX = []; A = []; B = []; TETA = []; IAV = []; IERR = []
+	'''
+	for k in range(6,N):
+		teta=radians(90.-theta[k])
+		III = []
+
+
+		for i in range(int(xc-(a[k]+gap/2.)*cos(teta)),int(xc+(a[k]+gap/2.)*cos(teta)),1):
+			for l in range(int(yc-(b[k]+gap/2.)*sin(teta)),int(yc+(b[k]+gap/2.)*sin(teta)),1):
+				if ceil( ((i-xc)*cos(teta) - (l-yc)*sin(teta))**2/((a[k]-gap/2.)**2) + ((i-xc)*sin(teta)+(l-yc)*cos(teta))**2/((b[k]-gap/2.)**2))>=1. and floor( ((i-xc)*cos(teta) - (l-yc)*sin(teta))**2/((a[k]+gap/2.)**2) + ((i-xc)*sin(teta)+(l-yc)*cos(teta))**2/((b[k]+gap/2.)**2))<=1.:
+					III.append(I[l,i])
+					#print I[l,i]
+	'''
+	def rot(x,y,ti,xc,yc):
+		#ti = radians(90.-ti)			#????????????????????
+		x1 = x*cos(ti) - y*sin(ti) + xc
+		y1 = x*sin(ti) + y*cos(ti) + yc
+		return int(x1),int(y1)
+
+
+
+	for k in range(6,N):
+		teta = radians(90.-theta[k])
+		III = []
+		for l in range(-int(a[k]),int(a[k]),1):
+			for i in range(-int(b[k]),int(b[k]),1):
+				if l**2/((a[k]+gap/2.)**2) + i**2/((b[k]+gap/2.)**2)<=1. and l**2/((a[k]-gap/2.)**2) + i**2/((b[k]-gap/2.)**2)>=1.:
+					x_new,y_new = rot(l,i,teta,xc,yc)
+					if x_new+1<nx and x_new-1>0 and y_new-1>0 and y_new+1<ny:
+						III.append(I[int(y_new),int(x_new)])
+
+		try:
+			
+			I_MAX.append(max(III))
+			A.append(a[k]+gap/2.)
+			B.append(b[k]+gap/2.)
+			TETA.append(teta)
+			IAV.append(Iav[k])
+			IERR.append(Ierr[k])
+			
+		except:
+			print a[k]
+
+	#print I_MAX,A
+
+
+
+	#print A[5]
+	#exit()
+	
+	NN = len(I_MAX)
+
+
+	for k in range(len(I_MAX)):
+		#print A[k],B[k],TETA[k],I_MAX[k]
+		#exit()
+		X = []; Y = []
+		for l in range(-int(A[k]),int(A[k]),1):
+			for i in range(-int(B[k]),int(B[k]),1):
+				if l**2/(A[k]**2) + i**2/(B[k]**2)<=1.:
+					x_new,y_new = rot(l,i,TETA[k],xc,yc)
+					#X.append(x_new)
+					#Y.append(y_new)
+					if x_new+1<nx and x_new-1>0 and y_new-1>0 and y_new+1<ny:
+						I[int(y_new),int(x_new)] = 99999.
+						I[int(y_new+1),int(x_new+1)] = 99999.
+						I[int(y_new-1),int(x_new-1)] = 99999.
+						I[int(y_new-1),int(x_new+1)] = 99999.
+						I[int(y_new+1),int(x_new-1)] = 99999.
+
+
+		for l in range(nx):
+			for i in range(ny):
+				if I[i,l]!=99999. and I[i,l]>I_MAX[k]: #and I[i,k]>5.*noise:
+					#x.append(k+1)
+					#y.append(i+1)			 
+					img[i,l] = 0.
+					print >>f, "%i %i" % (l+1,i+1)
+				if k == NN-1 and I[i,l]!=99999. and I[i,l]>lim*noise and lim!=0:	
+					img[i,l] = 0.
+					print >>f, "%i %i" % (l+1,i+1)
+
+
+
+
+
+
+
+	
+
+	shutil.copy('galaxy_clean1.fits','galaxy_clean.fits')
+	os.remove('galaxy_clean1.fits')
+	os.remove('galaxy_clean2.fits')
+	hdulist.flush()
+
+
+
+
