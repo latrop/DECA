@@ -35,7 +35,7 @@ tmp_out = sys.stdout
 #*** FROM SETUP FILE ***
 radius_find = setup.radius_find
 semimajor_find = setup.semimajor_find
-
+print setup.radius_find
 '''
 minarea = setup.DETECT_MINAREA
 thresh = setup.DETECT_THRESH

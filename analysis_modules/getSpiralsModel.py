@@ -5,6 +5,7 @@ from os import path
 import re
 from math import log, ceil, degrees, radians, pi, tan, atan, copysign
 import math
+import os
 
 from numpy import cos, sin, log, empty, zeros, zeros_like, float_, where, arange, median, std
 from scipy.weave import converters

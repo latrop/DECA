@@ -345,17 +345,17 @@ def dec_galfit(find_psf,m0,pix2sec,nx,ny,xc,yc,m0d,Md,h,z0,elld,cd,rtr,meb,Mb,re
 	f.close()
 	
 
-	#p = subprocess.Popen('galfit input.txt',  shell=True, close_fds=False)
-	#p.kill
-	#status = p.wait() 
+	p = sub.Popen('galfit input.txt',  shell=True, close_fds=False)
+	p.kill
+	status = p.wait() 
 
-	status = RunCmd(["galfit", "input.txt"], setup.TIME).Run()
-	'''
+	#status = RunCmd(["galfit", "input.txt"], setup.TIME).Run()
+
 	if os.path.exists('galfit.01')==False:
 		status = 1
 	else:
 		status = 0
-	'''
+
 	#print status
 	#exit()
 
@@ -492,12 +492,16 @@ def dec_galfit_spirals(find_psf,m0,pix2sec,nx,ny,xc,yc,m0d0,h0,PAd,optimalInnerR
 	f.close()
 	
 
-	#p = subprocess.Popen('galfit input.txt',  shell=True, close_fds=False)
-	#p.kill
-	#status = p.wait() 
+	p = sub.Popen('galfit input.txt',  shell=True, close_fds=False)
+	p.kill
+	status = p.wait() 
 
-	status = RunCmd(["galfit", "input.txt"], setup.TIME).Run()
+	#status = RunCmd(["galfit", "input.txt"], setup.TIME).Run()
 
+	if os.path.exists('galfit.01')==False:
+		status = 1
+	else:
+		status = 0
 
 	#print status
 	#exit()
@@ -667,20 +671,25 @@ def dec_galfit_object(find_psf,file_in,file_out,m0,pix2sec,nx,ny,xc,yc,m0d,Md,h,
 	sys.stdout = tmp_out
 	f.close()
 
-	#1
-	#p = subprocess.Popen('galfit input.txt',  shell=True, close_fds=False)
-	#p.kill
-	#status = p.wait()
+	p = sub.Popen('galfit input.txt',  shell=True, close_fds=False)
+	p.kill
+	status = p.wait() 
 
-	#2
-	#RunCmd(["galfit", "input.txt"], 60).Run()
+	#status = RunCmd(["galfit", "input.txt"], setup.TIME).Run()
 
-	#3
+	if os.path.exists('galfit.01')==False:
+		status = 1
+	else:
+		status = 0
 
+	#print status
+	#exit()
 
+	if int(status)==-6:	status=0
 
 	if status!=0:
 		return status
 	else:
-		subprocess.call("galfit -o3 galfit.01", shell=True, close_fds=False)
+		sub.call("galfit -o3 galfit.01", shell=True, close_fds=False)
 		return status
+

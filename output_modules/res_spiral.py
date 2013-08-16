@@ -440,7 +440,7 @@ def results(galaxy_name,model,out_image,file_out_txt,file_out_pdf,filter_name,co
 
 
 	if out==1 and fix==0:                        # here the disk scale was corrected (Sergey). q_d was added (Sergey)
-		return xc_d[0],yc_d[0],m0_d[0],h_d[0]/pix2sec,r_in[0],r_out[0],r_angle[0],incl_angle[0],spa[0],pa[0], q_d[0]
+		return xc_d[0],yc_d[0],m0_d[0],h_d[0]/pix2sec,r_in[0],r_out[0],r_angle[0],incl_angle[0],spa[0],pa[0], q_d[0], chi2
 	if out==1 and fix==1:
 		return xc_d[0],yc_d[0],m0_d[0],h_d[0],r_in[0],r_out[0],r_angle[0],incl_angle[0],spa[0],pa[0],rtr[0],xc_bul[0],yc_bul[0],me_bul[0],re_bul[0],q_bul[0],n_bul[0],c_bul[0],chi2
 

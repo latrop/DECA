@@ -962,7 +962,12 @@ def  main(ff_log,number,xc,yc,kron_r,flux_radius,mag_auto,a_image,b_image,PA,NOI
 
 
 def second_iter(number,Model,k_iter,nx,ny,xc,yc,pix2sec,m0,EXPTIME,sky_level,file_out_txt,file_out_pdf,filter_name,colour_name,colour_value,Aext,z,D,galaxy_name,find_psf,m0d0,h0,z00,elld0,rmax,meb0,reb0,n0,ellb0,cb0,chi2,FWHM):
+		ff = open('models.txt', 'a')
+		ff_sp = open('spiral_pars.txt', 'w')
+		ff_sp_final = open('spiral_par.txt', 'a')
+
 		import getSpiralsModel
+		import res_spiral
 		xc,yc,m0d0,h0,pa,optimalInnerRadius,diskR25,angularRotation,galaxyIncl,PAd=getSpiralsModel.getSpiralsModel('out.fits', Model,pix2sec)
 		print '\n********************* Spiral parameters *********************'
 		print 'Model: log-tanh'
@@ -982,19 +987,13 @@ def second_iter(number,Model,k_iter,nx,ny,xc,yc,pix2sec,m0,EXPTIME,sky_level,fil
 		if (Model=='exp' or Model=='ser' or Model=='exp+ser' or change_rmax==1) and setup.lim_pars!=1:
 			constraints.constr1(file_constraints,Model,0,FWHM,pix2sec,h0,optimalInnerRadius,diskR25,angularRotation,galaxyIncl,fix=1)
 
-
-
-
-
-
-
 		if rmax>10000.:	rmax = 99999.
 		status = GALFIT.dec_galfit_spirals(find_psf,m0-2.5*log10(EXPTIME),pix2sec,nx,ny,xc,yc,m0d0,h0,PAd,optimalInnerRadius,diskR25,angularRotation,galaxyIncl,pa,rmax,meb0,reb0,n0,ellb0,cb0,sky_level,fix=0,PAb=90.)
 
 		#exit()
 		if status==0:
 			import res_spiral
-			xc_d,yc_d,m0_d,h_d,r_in,r_out,r_angle,incl_angle,spa,pa, q_d = res_spiral.results(galaxy_name,Model,'0',file_out_txt,file_out_pdf,filter_name,colour_name,colour_value,Aext,z,pix2sec,m0,D,status,tables='tog',gal_number=0,out=1,fix=0)
+			xc_d,yc_d,m0_d,h_d,r_in,r_out,r_angle,incl_angle,spa,pa,q_d,chi2 = res_spiral.results(galaxy_name,Model,'0',file_out_txt,file_out_pdf,filter_name,colour_name,colour_value,Aext,z,pix2sec,m0,D,status,tables='tog',gal_number=0,out=1,fix=0)
 			shutil.move(file_galfit_outimage,'./pics/%i/out_%i.fits' % (number,k_iter+1))
 			shutil.move('subcomps.fits','./pics/%i/sub_%i.fits' % (number,k_iter+1))
 			os.remove('galfit.01')
@@ -1011,9 +1010,20 @@ def second_iter(number,Model,k_iter,nx,ny,xc,yc,pix2sec,m0,EXPTIME,sky_level,fil
 		        print "spa=", spa
 		        print "pa=", pa
 		        print "q_d=", q_d
+
+			print >>ff, '%i\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%s\t%i' % (k_iter,xc_d,yc_d,m0_d,h_d,q_d,99999.,rmax,xc_d,yc_d,meb0,reb0,1.0-ellb0,n0,cb0,chi2,Model,status)
+
+			print >>ff_sp, '%i\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f' % (1,r_in,r_out,r_angle,incl_angle,spa)
+
+
+
 		else:
 			print "Spiral fitting crashed!"
+			print >>ff, '%i\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%s\t%i' % (k_iter,99999.,99999.,99999.,99999.,99999.,99999.,99999.,99999.,99999.,99999.,99999.,99999.,99999.,99999.,99999.,Model,1)
+
 			return k_iter,xc,yc,m0d0,h0,1.-elld0,99999.,rmax,xc,yc,meb0,reb0,1.-ellb0,n0,cb0,chi2,Model,0
+
+
 
 		if Model=='exp':
 			return k_iter,xc_d,yc_d,m0_d,h_d,1.-elld0,99999.,rmax,xc,yc,meb0,reb0,1.-ellb0,n0,cb0,chi2,Model,status
@@ -1027,6 +1037,13 @@ def second_iter(number,Model,k_iter,nx,ny,xc,yc,pix2sec,m0,EXPTIME,sky_level,fil
 		if (Model=='ser' or Model=='exp+ser' or change_rmax==1) and setup.lim_pars!=1:
 			constraints.constr1(file_constraints,Model,0,FWHM,pix2sec,h0,r_in,r_out,r_angle,incl_angle,R10=spa,n_iter=3,fix=1)
 
+
+
+
+		NITER=3
+		if NITER==2:
+			xc_d=xc; yc_d=yc; m0_d=m0d0; h_d=h0; spa=PAd; r_in=optimalInnerRadius; r_out=diskR25;r_angle=angularRotation; incl_angle=galaxyIncl; q_d=1.-elld0
+
 		if Model=='ser' or Model=='exp+ser':
 			status = GALFIT.dec_galfit_spirals(find_psf,m0-2.5*log10(EXPTIME),pix2sec,nx,ny,xc_d,yc_d,m0_d,h_d,spa,r_in,r_out,r_angle,incl_angle,pa,rmax,meb0,reb0,n0,ellb0,cb0,sky_level,fix=1,PAb=90., q_d=q_d) # q_d was added as last parmeter (Sergey)
 
@@ -1035,9 +1052,17 @@ def second_iter(number,Model,k_iter,nx,ny,xc,yc,pix2sec,m0,EXPTIME,sky_level,fil
 			shutil.move(file_galfit_outimage,'./pics/%i/out_%i.fits' % (number,k_iter+1))
 			shutil.move('subcomps.fits','./pics/%i/sub_%i.fits' % (number,k_iter+1))
 			os.remove('galfit.01')
-			return k_iter+1,xc_d,yc_d,m0_d,h_d,1.-elld0,99999.,rtr,xc_bul,yc_bul,me_bul,re_bul,q_bul,n_bul,c_bul,chi2,Model,status
+			print >>ff_sp, '%i\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f' % (2,r_in,r_out,r_angle,incl_angle,spa)
+			print >>ff, '%i\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%s\t%i' % (k_iter+1,xc_d,yc_d,m0_d,h_d,1.-elld0,99999.,rmax,xc_bul,yc_bul,me_bul,re_bul,q_bul,n_bul,c_bul,chi2,Model,status)
+			print >>ff_sp_final, '%i\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f' % (number,r_in,r_out,r_angle,incl_angle,spa)
+			return k_iter+1,xc_d,yc_d,m0_d,h_d,1.-elld0,99999.,rmax,xc_bul,yc_bul,me_bul,re_bul,q_bul,n_bul,c_bul,chi2,Model,status
 		else:
 			print "Spiral fitting crashed!"
-			return k_iter,xc,yc,m0d0,h0,1.-elld0,99999.,rmax,xc,yc,meb0,reb0,1.-ellb0,n0,cb0,chi2,Model,0
+			print >>ff, '%i\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%s\t%i' % (k_iter,99999.,99999.,99999.,99999.,99999.,99999.,99999.,99999.,99999.,99999.,99999.,99999.,99999.,99999.,99999.,Model,1)
+			print >>ff_sp_final, '%i\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f' % (number,99999.,99999.,99999.,99999.,99999.)
+			return k_iter-1,xc,yc,m0d0,h0,1.-elld0,99999.,rmax,xc,yc,meb0,reb0,1.-ellb0,n0,cb0,chi2,Model,0
+		ff.close()
+		ff_sp.close()
+		ff_sp_final.close()
 
 	

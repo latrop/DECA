@@ -32,6 +32,8 @@ import time
 import pyfits
 import re
 
+configdir = '.'
+sys.path.insert(0, configdir)
 
 #*** Colour fonts ***
 class bcolors:
@@ -51,8 +53,8 @@ class bcolors:
         self.ENDC = ''
 
 # We are using this directory where you've created input files
-configdir = '.'
-sys.path.append(configdir)
+#configdir = '.'
+#sys.path.append(configdir)
 DECA_PATH = os.path.dirname(__file__)
 
 
@@ -65,7 +67,6 @@ from analysis_modules import ell
 from output_modules import out
 from output_modules import res
 from prep_modules import sky_est
-import setup
 from analysis_modules import soph
 from ini_modules import fitting
 from ini_modules import fitting_opt_model
@@ -108,9 +109,16 @@ print bcolors.OKBLUE+ '\n############# WRITTEN BY MOSENKOV ALEKSANDR ###########
 #*** Input files ***
 if os.path.exists('setup.py')==False:
 	print bcolors.OKBLUE+ 'The default setup file is used!' + bcolors.ENDC
+	#sys.path.append(configdir)
+	import setup
 else:
 	print bcolors.OKBLUE+ 'The user defined setup file is used!' + bcolors.ENDC	
+	#sys.path.insert(0, configdir)
+	#print sys.path
+	import setup
 
+#print setup.dust_mask
+#exit()
 deca_input = 'deca_input.py'
 deca_input_sample = 'deca_input.dat'
 deca_initials = 'initials.py'
@@ -141,6 +149,7 @@ file_inter = 'interact.cat'
 file_psf = 'psf.fits'
 file_psf_model = 'psf_model.fits'
 file_nonpar = 'nonpar.txt'
+file_spiral_txt = 'spiral_par.txt'
 
 
 time_begin = time.time() 
@@ -339,6 +348,7 @@ if not os.path.exists("%s" % (file_ell_txt)):
 		ff_ell.close()
 
 
+
 if n_it>1:
 	lines=f.readlines()
 	s = re.split('\t',lines[NUMB-1])
@@ -384,6 +394,14 @@ if n_it>1:
 	psf_name = str(p_split.split(s[30])[0])
 
 	k = NUMB
+
+#6)
+if numb_iter==2:
+	if not os.path.exists("%s" % (file_spiral_txt)):
+			ff_sp_final = open(file_spiral_txt,'w')
+			print >>ff_sp_final, '#\tr_in\tr_out\tr_angle\tincl_angle\tspa'
+			print >>ff_sp_final, '\tarcsec\tarcsec\tdeg\tdeg\tdeg'
+			ff_sp_final.close()
 
 
 if n_it>0:
@@ -1152,6 +1170,7 @@ if n_it>0:
 				mover('galaxy_wt_cont.fits')
 
 			mover('ell.png')
+			mover('spiral_pars.txt')
 			mover('galaxy.png')
 			mover('major_prof.png')
 			mover('minor_prof.png')

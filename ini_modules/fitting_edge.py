@@ -117,6 +117,7 @@ def add_mask_dust(zmin1,zmin2,xc,rmax,nx):
 	#print int(floor(xc-rmax/2.)),int(ceil(xc+rmax/2.))
 	
 	f_dust.close()	
+	#exit()
 
 def line(B, x):
     return (1.0857/B[0])*fabs(x) + B[1]
@@ -485,7 +486,7 @@ def def_model(ellip,C31,bump):
 	return model
 
 def filters(f):
-	if f=='J' or f=='H' or f=='K' or f=='Ks' or f=='NIR' or f=='i':
+	if f=='J' or f=='H' or f=='K' or f=='Ks' or f=='NIR' or f=='i' or f=='r':
 		return 0
 	else:
 		return 1
@@ -625,7 +626,7 @@ def  main(ff_log,number,xc,yc,kron_r,flux_radius,mag_auto,a_image,b_image,PA,NOI
 					if Model=='exp' or Model=='exp+ser' or Model=='ser':
 						m0d0,magDisk0,h0,z00,elld0,cd0,rtr0,meb0,magBul0,reb0,n0,ellb0,cb0 = INITIALS.ini_prof('azim',xc,yc,PA,m0,pix2sec,NOISE,a_image*kron_r,FWHM,Model,ellip,C31)
 						good = 0
-						if math.isnan(float(m0d0))==True or n0<0. or math.isnan(float(meb0))==True:
+						if math.isnan(float(m0d0))==True or n0<0. or math.isnan(float(meb0))==True or reb0<=1.:
 							good=1
 						
 					elif Model=='edge' or Model=='edge+ser':
@@ -634,7 +635,7 @@ def  main(ff_log,number,xc,yc,kron_r,flux_radius,mag_auto,a_image,b_image,PA,NOI
 							good = 0
 						else:
 							good = 1
-						if math.isnan(float(m0d0))==True or n0<0. or math.isnan(float(meb0))==True:
+						if math.isnan(float(m0d0))==True or n0<0. or math.isnan(float(meb0))==True or reb0<=1.:
 							good=1
 
 				except:
@@ -642,7 +643,8 @@ def  main(ff_log,number,xc,yc,kron_r,flux_radius,mag_auto,a_image,b_image,PA,NOI
 					print >>ff_log, '  This way failed!'
 					good=1
 					NIR = 1
-				
+
+			
 
 			if way==3 or good!=0:
 				try:
@@ -655,13 +657,13 @@ def  main(ff_log,number,xc,yc,kron_r,flux_radius,mag_auto,a_image,b_image,PA,NOI
 						#m0d0,magDisk0,h0,z00,elld0,cd0,rtr0,meb0,magBul0,reb0,n0,ellb0,cb0 = INITIALS.ini_prof('azim',xc,yc,PA,m0,pix2sec,NOISE,a_image*kron_r,FWHM,Model,ellip,C31)
 						m0d0,magDisk0,h0,z00,elld0,cd0,rtr0,meb0,magBul0,reb0,n0,ellb0,cb0,xc,yc,incl,zmin1,zmin2 = INITIALS_edge_on.main_edge(file_gal_clean,xc,yc,kron_r,a_image,b_image,NOISE,pix2sec,m0,FWHM,Model,ellip,C31,NIR)
 						good = 0
-					if math.isnan(float(m0d0))==True or n0<0. or math.isnan(float(meb0))==True:
+					if math.isnan(float(m0d0))==True or n0<0. or math.isnan(float(meb0))==True or reb0<=1.:
 						good=1
 				except:
 					good=1
 					print bcolors.FAIL+ 'This way failed!'+ bcolors.ENDC
 					print >>ff_log, '  This way failed!'
-					#exit()
+			#exit()
 			if way==4 or good!=0:
 				print 'Way to find initial parameters: 4'
 				print >>ff_log, 'Way to find initial parameters: 4'
@@ -700,9 +702,10 @@ def  main(ff_log,number,xc,yc,kron_r,flux_radius,mag_auto,a_image,b_image,PA,NOI
 			ff_ini.close()
 			return k_iter-1,xc,yc,m0d0,h0,99999.,z00,rtr0,xc,yc,meb0,reb0,99999.,n0,cb0,1.,Model,1
 		if Model=='exp' or Model=='ser' or Model=='exp+ser' or change_rmax==1:
-			constraints.constr(file_constraints,Model,0,FWHM,pix2sec,h0)	# Creating constraints file
+			constraints.constr(file_constraints,Model,0,FWHM,pix2sec,h0,rmax)	# Creating constraints file
 		else:
-			constraints.constr(file_constraints,Model,1,FWHM,pix2sec,h0)	# Creating constraints file
+			constraints.constr(file_constraints,Model,1,FWHM,pix2sec,h0,rmax)	# Creating constraints file
+
 
 
 		if setup.dust_mask==0:
@@ -723,7 +726,7 @@ def  main(ff_log,number,xc,yc,kron_r,flux_radius,mag_auto,a_image,b_image,PA,NOI
 	
 
 		#cb0 = 0.	# 99999.
-
+		#exit()
 		if change_rmax == 1:	rmax=99999.; rtr = rmax
 	
 		status = GALFIT.dec_galfit(find_psf,m0-2.5*log10(EXPTIME),pix2sec,nx,ny,xc,yc,m0d0,magDisk0,h0,z00,elld0,cd0,rmax,meb0,magBul0,reb0,n0,ellb0,cb0,sky_level,PAd=90.,PAb=90.)
